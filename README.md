@@ -9,15 +9,17 @@ Forked from original unmaintained repository at [http://dev.naver.com](http://de
 
 Usage
 =====
-To bee translated
+To bee translated.
 
 
 
 
 Examples
 ====
-Works best with passwordless ssh, like:
+Works best with passwordless ssh, then checking the date on 3 hosts would be:
 
 ```
 trinity@matrix:~$ dist -c "date" host1 host2 host2
 ```
+
+Use  ```dist -h``` for help.
