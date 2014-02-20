@@ -1,0 +1,2559 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+## @mainpage DIST
+#  @section Developer 
+#           JEONG JaeHoon 정재훈, jibong96(at)nhncorp.com <BR>
+#           SOHN Jonghyon 손정현, jsohn(at)nhncorp.com <BR>
+#           NHN corp. <BR>
+#
+#  @section Description
+# This Program is under the GPL License.<br>
+# And, if you use Dist, we want to hear it from you.
+# Yon can make another branch of Dist.
+# But We prefer to manage this software by us rather than make another
+# branch by you.
+# If Dist has some problems or you need additional functions, contact us.
+# We'll develop it and return fixed Dist to you.
+#
+# Do not remove this notice even if you make another branch.
+# Later, We will announce license of this software to you officially.
+
+
+# dist is under the GPL License
+# Copyright (c) 2008  JEONG JeaHoon, SOHN Jonghyon,  NHN Corp.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+# http://www.gnu.org/licenses/gpl.html
+
+
+#Class TerminalController is under MIT License
+#http://code.activestate.com/recipes/475116/
+#Copyright (c) 2006 by Edward Loper
+
+#MIT License
+#Permission is hereby granted, free of charge, to any person
+#obtaining a copy of this software and associated documentation
+#files (the "Software"), to deal in the Software without
+#restriction, including without limitation the rights to use,
+#copy, modify, merge, publish, distribute, sublicense, and/or sell
+#copies of the Software, and to permit persons to whom the
+#Software is furnished to do so, subject to the following
+#conditions:
+#    The above copyright notice and this permission notice shall be
+#    included in all copies or substantial portions of the Software.
+#    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+#    OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#    NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#    HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+#    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+#    OTHER DEALINGS IN THE SOFTWARE.
+
+
+
+
+
+
+#Class ThreadPool and ThreadPoolTask is under the GPL License
+#http://julien.herbin.ecranbleu.org/threadpool/
+#http://www.gnu.org/licenses/gpl.html
+# Copyright (C) 2004  Julien Herbin
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+
+# Julien Herbin <julien@ecranbleu.org>
+
+
+
+
+
+## @package dist
+#  @brief  dist main code
+#
+
+
+import os, stat
+import re
+import sys
+import time
+#import Queue
+import logging
+import threading
+import getopt
+import getpass 
+import select
+import signal
+import datetime
+import commands
+import string
+import random
+import ConfigParser
+from stat import *
+from subprocess import *
+from Queue import Queue
+
+#import logging
+#logging.basicConfig(level=logging.DEBUG)
+
+#-------------------------------------------------------------------------
+# Constant
+#-------------------------------------------------------------------------
+MODE_DB      = 2
+MODE_FILE    = 3
+
+MODE_STDOUT  = True
+MODE_STDERR  = False
+#MAX_CONCURRENT_TASK = 1000
+#MAX_CONCURRENT_TASK = 100
+#MAX_CONCURRENT_TASK = 400
+
+MAX_CONCURRENT_TASK = 400
+HARD_MAX_CONCURRENT_TASK = 1024
+
+#-------------------------------------------------------------------------
+# input parameter variables
+#-------------------------------------------------------------------------
+DIST_REMOTE_HOME = None
+DIST_SERVERGROUP_DIR = None
+DIST_HISTORY_FILE = None
+
+
+DB_HOST = None
+DB_PORT = None
+DB_USER = None
+DB_PASSWD = None
+DB_DBNAME = None
+DB_DBTABLENAME = None
+
+
+bOriginalMsg = False
+bPrintQuery = True
+#nConcurrent=0           # the number of thread
+nConcurrent=MAX_CONCURRENT_TASK           # the number of thread
+nDelayTime=0.01         # delay time
+nTimeout=0              # timeout
+strCommand=None         # command to run
+strCommandFile=None     # a script file to run
+strArguments=''         # a script file to run
+strNoLog=None
+strPrintMode="all"      # a mode to print. [all/success/fail]
+strPrintUsage=None      # print help message
+strErrorHandle="stderr"
+strDonotask = "no"
+strDelete = "yes"
+strSort = "yes"
+strDebugMode=False
+strPrintHistory=None
+strPrintSummary="no"
+strPrintRecap="yes"
+strPrintResource="no"
+strSendFiles=None
+strWhere=''
+strDelim=None
+strSaveDir=None
+strHostUnique="yes"
+strOverwrite="no"
+strDistrcFile=None
+strExcludeListFile=None
+nStartProgramTime=None  # start time of program
+nStartCommandTime=None  # start time of command
+nSaveMode=0
+nBufferLine=5
+nBufferFlushTime=1
+nConnectionTimeout=10
+nSequenceOffset=1
+nHowToGetSvrList=MODE_FILE
+nMaxLength=10           # max length of hostnames
+listServer=[]           # server list to run command
+dictChildPid=dict()     # pid list of  chlid processes
+
+isExit=False
+#term=None               # a object to control the current console
+outputDevice=None
+command=None
+printQueue = Queue()
+#printLock=threading.Lock()
+pool=None
+pool2=None
+
+#-------------------------------------------------------------------------
+# statistics variables
+#-------------------------------------------------------------------------
+nTotalJob=0
+nWarningJob=0
+
+listFailJob=[]          # a server list completed jobs unsuccessfully
+
+listRealTime=[]
+listUserTime=[]
+listSysTime=[]
+listAveCpu=[]
+listMaxMem=[]
+listAveMem=[]
+listSignal=[]
+listInFile=[]
+listOutFile=[]
+listRecvMsg=[]
+listSendMsg=[]
+
+
+## @brief Controls the terminal IO (for coloring the output text)
+#  @remarks
+#   Class TerminalController is under MIT License <br>
+#   http://code.activestate.com/recipes/475116/
+#  @author Edward Loper (original) <br>
+#          JEONG JaeHoon, SOHN Jonghyon  
+class TerminalController:
+    # Cursor movement:
+    BOL = ''             ## Move the cursor to the beginning of the line
+    UP = ''              ## Move the cursor up one line
+    DOWN = ''            ## Move the cursor down one line
+    LEFT = ''            ## Move the cursor left one char
+    RIGHT = ''           ## Move the cursor right one char
+
+    # Deletion:
+    CLEAR_SCREEN = ''    #: Clear the screen and move to home position
+    CLEAR_EOL = ''       #: Clear to the end of the line.
+    CLEAR_BOL = ''       #: Clear to the beginning of the line.
+    CLEAR_EOS = ''       #: Clear to the end of the screen
+
+    # Output modes:
+    BOLD = ''            #: Turn on bold mode
+    BLINK = ''           #: Turn on blink mode
+    DIM = ''             #: Turn on half-bright mode
+    REVERSE = ''         #: Turn on reverse-video mode
+    NORMAL = ''          #: Turn off all modes
+
+    # Cursor display:
+    HIDE_CURSOR = ''     #: Make the cursor invisible
+    SHOW_CURSOR = ''     #: Make the cursor visible
+
+    # Terminal size:
+    COLS = None          #: Width of the terminal (None for unknown)
+    LINES = None         #: Height of the terminal (None for unknown)
+
+    # Foreground colors:
+    BLACK = BLUE = GREEN = CYAN = RED = MAGENTA = YELLOW = WHITE = ''
+    # Background colors:
+    BG_BLACK = BG_BLUE = BG_GREEN = BG_CYAN = ''
+    BG_RED = BG_MAGENTA = BG_YELLOW = BG_WHITE = ''
+    _STRING_CAPABILITIES = """
+            BOL=cr UP=cuu1 DOWN=cud1 LEFT=cub1 RIGHT=cuf1
+            CLEAR_SCREEN=clear CLEAR_EOL=el CLEAR_BOL=el1 CLEAR_EOS=ed BOLD=bold
+            BLINK=blink DIM=dim REVERSE=rev UNDERLINE=smul NORMAL=sgr0
+            HIDE_CURSOR=cinvis SHOW_CURSOR=cnorm""".split()
+    _COLORS = """BLACK BLUE GREEN CYAN RED MAGENTA YELLOW WHITE""".split()
+    _ANSICOLORS = "BLACK RED GREEN YELLOW BLUE MAGENTA CYAN WHITE".split()
+
+    stdin=None
+    stdout=None
+    stderr=None
+
+    ##
+    # checks curses library, screen capability, etc.
+    def __init__(self, term_stream=sys.stdout):
+        try: import curses
+        except: return
+
+        # If the stream isn't a tty, then assume it has no capabilities.
+        if not term_stream.isatty(): return
+
+        # Check the terminal type.  If we fail, then assume that the
+        # terminal has no capabilities.
+        try: curses.setupterm()
+        except: return
+
+        self.stdin = sys.stdin
+        self.stdout = sys.stdout
+        self.stderr = sys.stderr
+
+
+        # Look up numeric capabilities.
+        self.COLS = curses.tigetnum('cols')
+        self.LINES = curses.tigetnum('lines')
+
+        # Look up string capabilities.
+        for capability in self._STRING_CAPABILITIES:
+            (attrib, cap_name) = capability.split('=')
+            setattr(self, attrib, self._tigetstr(cap_name) or '')
+
+        # Colors
+        set_fg = self._tigetstr('setf')
+        if set_fg:
+            for i,color in zip(range(len(self._COLORS)), self._COLORS):
+                setattr(self, color, curses.tparm(set_fg, i) or '')
+        set_fg_ansi = self._tigetstr('setaf')
+
+        if set_fg_ansi:
+            for i,color in zip(range(len(self._ANSICOLORS)), self._ANSICOLORS):
+                setattr(self, color, curses.tparm(set_fg_ansi, i) or '')
+        set_bg = self._tigetstr('setb')
+
+        if set_bg:
+            for i,color in zip(range(len(self._COLORS)), self._COLORS):
+                setattr(self, 'BG_'+color, curses.tparm(set_bg, i) or '')
+        set_bg_ansi = self._tigetstr('setab')
+
+        if set_bg_ansi:
+            for i,color in zip(range(len(self._ANSICOLORS)), self._ANSICOLORS):
+                setattr(self, 'BG_'+color, curses.tparm(set_bg_ansi, i) or '')
+
+    ## String capabilities can include "delays" of the form "$<2>".
+    # For any modern terminal, we should be able to just ignore
+    # these, so strip them out.
+    def _tigetstr(self, cap_name):
+        import curses
+        cap = curses.tigetstr(cap_name) or ''
+        return re.sub(r'\$<\d+>[/*]?', '', cap)
+
+    def render(self, template):
+        return re.sub(r'\$\$|\${\w+}', self._render_sub, template)
+
+    def _render_sub(self, match):
+        s = match.group()
+        if s == '$$': return s
+        else: return getattr(self, s[2:-1])
+
+    ## maps conceptual colors to ANSI colors
+    def setColor(self,type):
+        if (type==OutputDeviceWrapper.WARNING) :
+            charColor=self.YELLOW
+        elif type==OutputDeviceWrapper.ERROR :
+            charColor=self.RED
+        elif type==OutputDeviceWrapper.ERROR2:
+            charColor=self.MAGENTA
+        elif type==OutputDeviceWrapper.INFO:
+            charColor=self.GREEN
+        elif type==OutputDeviceWrapper.ETC:
+            charColor=self.CYAN
+        elif type==OutputDeviceWrapper.ETC2:
+            charColor=self.BLUE
+        elif type==OutputDeviceWrapper.NORMAL:
+            charColor=self.NORMAL
+        elif True: 
+            charColor=self.NORMAL
+        
+        return charColor
+
+    ## print function, stdout, formatted
+    def nPrint(self,msg,type,isContinued):
+        charColor=self.setColor(type)
+        self._raw_print(msg,charColor,isContinued)
+
+    ## print function, stderr, formatted
+    def nPrintErr(self,msg,type,isContinued):
+        charColor=self.setColor(type)
+        self._raw_print_err(msg,charColor,isContinued)
+
+    ## print function, stdout, raw
+    def nRawPrint(self,msg):
+        print msg
+
+
+    def _raw_print(self,msg,color,isContinued):
+        if isContinued:
+            print color+msg+self.NORMAL,
+        elif True:
+            print color+msg+self.NORMAL
+            
+
+    def _raw_print_err(self,msg,color,isContinued):
+        if isContinued:
+            #print >> self.stderr,color+msg+self.NORMAL,
+            print >> sys.stderr,color+msg+self.NORMAL,
+        elif True:
+            #print >> self.stderr,color+msg+self.NORMAL
+            print >> sys.stderr,color+msg+self.NORMAL
+        
+
+
+## Wrapper for output Terminal
+# @brief Wrapper for Terminal
+# @remarks  maps conceptual colors to real colors
+class OutputDeviceWrapper:
+
+    WARNING=1
+    NORMAL=2
+    ERROR=3
+    ERROR2=4
+    INFO=5
+    ETC=6
+    ETC2=7
+
+    ## init
+    def __init__(self):
+        ## TerminalController instance
+        self.term=TerminalController()
+
+    ## color mapping function
+    def nSetColor(self,type):
+        return self.term.setColor(type)
+
+    ## print function, stdout, formatted
+    def nPrint(self,msg,type,isContinued=0):
+        self.term.nPrint(msg,type,isContinued)
+
+    ## print function, stderr, formatted
+    def nPrintErr(self,msg,type,isContinued=0):
+        self.term.nPrintErr(msg,type,isContinued)
+
+    ## print function, stderr, formatted with header
+    def nPrintProgramErr(self,msg,type,isContinued=0):
+        self.term.nPrintErr("[PROGRAM][ERR]",self.ERROR,1)
+        self.term.nPrintErr(msg,type,isContinued)
+        logging.exception(str(msg))
+
+    ## print function, stdout, formatted, identical to nprint 
+    def nPrintProgramMsg(self,msg,type,isContinued=0):
+        self.term.nPrint(msg,type,isContinued)
+
+    ## print function, stdout, raw
+    def nRawPrint(self,msg):
+        self.term.nRawPrint(msg)
+
+
+
+
+
+
+## @brief  MySQL DB instance
+#  @remarks  
+#
+class DB:
+    global outputDevice
+    global DB_HOST
+    global DB_PORT
+    global DB_USER
+    global DB_PASSWD
+    global DB_DBNAME
+
+    ##DB connection attribute
+    host = None
+    ##DB connection attribute
+    port = None
+    ##DB connection attribute
+    user = None
+    ##DB connection attribute
+    passwd = None
+    ##DB connection attribute
+    dbname = None
+
+    ## init
+    def __init__(self):
+        self.host = DB_HOST
+        self.port = int(DB_PORT)
+        self.user = DB_USER
+        self.passwd = DB_PASSWD
+        self.dbname = DB_DBNAME
+    
+    ## execute SQL Query to DB
+    # @param[in] cmd  SQL Query statment
+    # @return nSuccess db.cusor.rowcount
+    def dbexec(self, cmd=None):
+        nSuccess = 0
+        db = None
+        cursor = None
+
+        if cmd == None: return False
+
+        try:
+            db = connect(host=self.host, port=self.port, user=self.user, passwd=self.passwd, db=self.dbname)
+            cursor = db.cursor()
+            cursor.execute(cmd)
+            nSuccess = cursor.rowcount
+        except Exception, e:
+             outputDevice.nPrintErr("[PROGRAM][ERR] Can't run a query.",OutputDeviceWrapper.ERROR)
+             outputDevice.nPrintErr("[PROGRAM][ERR] %s"%str(e) ,OutputDeviceWrapper.ERROR)
+        if cursor!=None: cursor.close()
+        if db!=None: db.close()
+
+        return nSuccess
+
+    ## execute SQL Query to DB and return records
+    # @param[in] cmd  SQL Query statment
+    # @return records list
+    def dbselect(self, cmd=None):
+        db = None
+        cursor = None
+        records = None
+
+        if cmd == None: return None
+
+        try:
+            db = connect(host=self.host, port=self.port, user=self.user, passwd=self.passwd, db=self.dbname)
+            cursor = db.cursor(cursors.DictCursor)
+            cursor.execute(cmd)
+            records = cursor.fetchall()
+        except Exception, e:
+            outputDevice.nPrintErr("[PROGRAM][ERR] Can't get a result from mysql.",OutputDeviceWrapper.ERROR)
+            outputDevice.nPrintErr("%s"%str(e),OutputDeviceWrapper.ERROR)
+
+        if cursor!=None: cursor.close()
+        if db!=None: db.close()
+
+        return records
+
+
+##  @remarks Class ThreadPool and ThreadPoolTask is under the GPL License<br>
+# http://julien.herbin.ecranbleu.org/threadpool/<br>
+# http://www.gnu.org/licenses/gpl.html <br>
+# Copyright (C) 2004  Julien Herbin<br>
+# @brief This class is a Thread pool manager. Tasks to perform must inherit the ThreadPoolTask class defined later.
+class ThreadPool(threading.Thread):
+    
+    global outputDevice
+
+    ## init
+    def __init__(self, pool_size=10, delay_time = 0.0, name=None, verbose=False):
+        """
+        ThreadPool constructor
+        """
+        threading.Thread.__init__(self, target=self.__run, name=name, args=())
+        self.__pool_size = pool_size
+        self.__stop = 0
+        self.__tasks_queued=[]
+        self.__tasks_running=[]
+        self.__delay_time = delay_time
+        self.__next_task_nb = 1
+        self.__verbose = verbose
+        self.__is_running = True
+        return
+    
+    def __len__(self):
+        """
+        Queue length 
+        """
+        if not self.__tasks_queued ==None :
+            len_queued = len(self.__tasks_queued) 
+        else :
+            len_queued = 0
+
+        if not self.__tasks_running ==None :
+            len_running=len(self.__tasks_running) 
+        else :
+            len_running=0
+
+        return len_queued+len_running 
+
+    ##Main method call with start since ThreadPool extends threading.Thread
+    def __run(self):
+        while self and not (self.__stop and len(self) == 0) :
+            if self.__verbose:
+                outputDevice.nPrint(str(self.queueSize()),OutputDeviceWrapper.NORMAL,1)
+                outputDevice.nPrint(" task(s) queued.",OutputDeviceWrapper.NORMAL)
+                outputDevice.nPrint(str(self.nbTasksRunning()),OutputDeviceWrapper.NORMAL,1) 
+                outputDevice.nPrint(" task(s) running.",OutputDeviceWrapper.NORMAL)
+
+            # Check if some tasks ended
+            x = range(len(self.__tasks_running))
+            x.reverse()
+            for pos in x:
+                task = self.__tasks_running[pos]
+                if not task.isAlive():
+                    del self.__tasks_running[pos]
+                    if self.__verbose:
+                        outputDevice.nPrint("Task : " + task.__str__() + " terminated.",OutputDeviceWrapper.NORMAL)
+                        #print "Task : " + task.__str__() + " terminated."
+                    
+            # If pool is not empty, run new tasks until it is or no task queued
+            while self.nbTasksRunning() < self.__pool_size and not self.queueEmpty():
+                task_to_run = self.__getNextTask()
+                task_to_run.setTaskName(self.__next_task_nb)
+                self.__next_task_nb += 1
+                self.__tasks_running.append(task_to_run)
+                task_to_run.initThread()
+                task_to_run.start()
+                time.sleep(self.__delay_time)
+            
+            if not self.queueEmpty():
+                if self.__verbose:
+                    #print "Some tasks are queued, but pool is empty... waiting..."
+                    outputDevice.nPrint("Some tasks are queued, but pool is empty... waiting...",OutputDeviceWrapper.NORMAL)
+            time.sleep(0.001)
+
+        self.__is_running = False
+   
+    ## returns Queue Length
+    def queueSize(self):
+        return len(self.__tasks_queued)
+    
+    ## returns T/F of Queue emptyness
+    def queueEmpty(self):
+        return self.queueSize() == 0
+
+    ## returns number of task running
+    def nbTasksRunning(self):
+        return len(self.__tasks_running)
+    
+    ## returns running task
+    def taskRunning(self):
+        return self.__is_running
+        #return self.nbTasksRunning()!=0
+    
+    ## task add
+    # @param[in] task should be an instance of ThreadPoolTask
+    # @param[in] priority 
+    # @return  T/F of success
+    def addTask(self, task,priority = 10):
+        if isinstance(task, ThreadPoolTask):
+            self.__tasks_queued.append([task,priority])
+            return 1
+        else:
+            return 0
+    
+    ##    This method browse the tasks_queued array and check which process
+    #    is the most urgent ! (ie with the biggest priority)
+    def __getNextTask(self):
+        if self.queueSize() != 0:
+            prioMax=0
+            for task in self.__tasks_queued:
+                if task[1] > prioMax:
+                    prioMax = task[1]
+                    priotaryTask = task
+            self.__tasks_queued.remove(priotaryTask)
+            return priotaryTask[0]
+        else:
+            return None
+   
+    ## stops task
+    def terminate(self):
+        self.__stop = 1
+
+
+##ThreadPoolTask abstract skeleton class  
+class ThreadPoolTask(threading.Thread):
+    def __init__(self, task_nb = " name unset"):
+        self.setTaskName(task_nb)
+        return
+
+    def initThread(self):
+        threading.Thread.__init__(self, target=self.run, name= self.getTaskName(), args=())
+    
+    def setTaskName(self, task_nb):
+        self.task_name = "Task " + str(task_nb)
+        return
+
+    def getTaskName(self):
+        return self.task_name
+
+    def _action(self):
+        pass
+
+    def run(self):
+        self._action()
+    
+##Print Queue Consumer
+class PrintQueueConsumer(ThreadPoolTask):
+    global outputDevice
+    global isExit
+
+    def __init__(self,producer_pool,task_nb=" name unset"):
+        ThreadPoolTask.__init__(self,task_nb)
+        self.p_pool=producer_pool
+
+    def _action(self):
+        last_print_time=time.time()
+
+        while not isExit and (self.p_pool.taskRunning() or printQueue.qsize()>0):
+            if not isExit and ( printQueue.qsize()>=nBufferLine or ((last_print_time+nBufferFlushTime)-time.time())<=0 ):
+                while not isExit and printQueue.qsize()>0:
+                    try:
+                        (str,color,cont)= printQueue.get()
+                        outputDevice.nPrint(str,color,cont)
+                    except :
+                        pass
+
+                last_print_time=time.time()
+            else :
+                time.sleep(0.001)
+
+
+
+
+## This class is here for real task  
+class TaskExecutor(ThreadPoolTask):
+    global outputDevice
+   
+    #global term
+    #term=None
+
+
+    ## init
+    def __init__(self, hostname, seq):
+        ThreadPoolTask.__init__(self)
+        self.hostname = hostname
+        self.seq = seq
+        self.executefile = None
+        #term=outputDevice.term
+
+    ## calls runCommand
+    def _action(self):
+        self.runCommand()
+
+    ## the real job executing function
+    def runCommand(self):
+        
+        bTimeout=False 
+
+        strOut=""
+        strErr=""
+        strLine=""
+
+        global listFailJob
+        global dictChildPid
+        global nStartCommandTime
+
+        listStdOut = []
+        listStdErr = []
+
+        key = "%05d%s"%(random.randrange(1, 100000), self.hostname)
+
+        if strDebugMode=="yes":
+            outputDevice.nPrintErr( ("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+"[DBG] start command.", OutputDeviceWrapper.ERROR)
+
+            
+        # Ctrl+C Signal Process
+        if isExit:
+            listFailJob.append(self.hostname)
+
+            self.print_error_msg("Killed by signal (before running)")
+            return
+
+        status,stdErr,delfiles=self.move_files()
+        #logging.debug("files to delete%s",delfiles)
+        if status!=0:
+            listFailJob.append(self.hostname)
+
+            self.print_error_msg(stdErr)
+            self.delete_files(delfiles)
+            return
+
+        #strLine,stdOut,stdErr=self.move_commandfile()
+        strLine,stdErr=self.move_commandfile()
+        if stdErr!=None and len(stdErr)>0:
+            listFailJob.append(self.hostname)
+
+            self.print_error_msg(stdErr)
+            self.delete_files(delfiles)
+            return
+
+        # if F option is 1 or 2
+        if strSaveDir!=None:
+            if nSaveMode==1:
+                savefileOut=savefileErr=open(strSaveDir+'/'+self.hostname, 'w')
+            else:
+                savefileOut=open(strSaveDir+'/'+self.hostname+'.out', 'w')
+                savefileErr=open(strSaveDir+'/'+self.hostname+'.err', 'w')
+        else:
+            savefileOut = None
+            savefileErr = None
+
+        # For timeout
+        nStartCommandTime=time.time()
+        # For flush time
+        lastPrintTime=time.time()
+
+        p=Popen(strLine,shell=True,stdin=None,stdout=PIPE,stderr=PIPE,close_fds=True)
+        dictChildPid[key]= "./%s"%(os.path.basename(self.executefile))
+        (stdIn,stdOut,stdErr)=(p.stdin,p.stdout,p.stderr)
+
+        readList = [stdOut, stdErr]
+        readStderr = False; readStdout = False
+        bufferOut = ""
+        bufferErr = ""
+
+        while True:
+            if nTimeout!=0:
+                timeout = (nStartCommandTime + nTimeout) - time.time()
+                #logging.debug(timeout)
+
+
+                if timeout<=0:
+                    bTimeout=True
+                    listStdErr=listStdErr+["Time Out."]
+                    break
+
+            if isExit:
+                listStdErr=listStdErr+["Killed by signal 2(in running)"]
+                break
+
+            if nTimeout==0:
+                (r, w, x) = select.select(readList, [], [])
+            else:
+                (r, w, x) = select.select(readList, [], [], timeout)
+
+            read = ""
+            if len(r):
+                if stdErr in r:
+                    read = os.read(stdErr.fileno(), 2048)
+                    if read:
+                        if strErr.startswith("[timeresult]"):
+                            strErr=strErr+read
+                        else:
+                            if len(strErr) <= 12:
+                                strErr=strErr+read
+
+                            if read.endswith('\n'):
+                                bufferErr=bufferErr+read.rstrip('\n')
+                                listBuffer=bufferErr.split("\n")
+                                bufferErr=""
+                            else:
+                                bufferErr=bufferErr+read
+                                listBuffer=bufferErr.split("\n")
+                                bufferErr=listBuffer.pop()
+
+                            listStdErr=listStdErr+listBuffer
+                            if strPrintSummary=="no":
+                                #lastPrintTime=self.print_in_process_result(MODE_STDERR, listStdErr, savefileErr, lastPrintTime)
+                                self.print_in_process_result(MODE_STDERR, listStdErr, savefileErr)
+
+                    else:
+                        readStderr = True
+                        readList.remove(stdErr)
+
+                elif stdOut in r:
+                    read = os.read(stdOut.fileno(), 2048)
+                    if read:
+                        if read.endswith('\n'):
+                            bufferOut=bufferOut+read.rstrip('\n')
+                            listBuffer=bufferOut.split("\n")
+                            bufferOut=""
+                        else:
+                            bufferOut=bufferOut+read
+                            listBuffer=bufferOut.split("\n")
+                            bufferOut=listBuffer.pop()
+
+                        listStdOut=listStdOut+listBuffer
+                        if strPrintSummary=="no":
+                            #lastPrintTime=self.print_in_process_result(MODE_STDOUT, listStdOut, savefileOut, lastPrintTime)
+                            self.print_in_process_result(MODE_STDOUT, listStdOut, savefileOut)
+                    else:
+                        readStdout = True
+                        readList.remove(stdOut)
+
+            elif r==[]:
+                listStdErr=listStdErr+["Time Out."]
+                #os.kill(p.pid,9);
+                bTimeout=True
+                os.kill(p.pid,signal.SIGKILL);
+                break
+
+            if readStderr and readStdout:
+                break
+
+
+        del dictChildPid[key]
+
+        if len(bufferOut)>0:
+            listStdOut = listStdOut + [bufferOut]
+        if len(bufferErr)>0:
+            listStdErr = listStdErr + [bufferErr]
+
+        #stdIn.close()
+        stdOut.close()
+        stdErr.close()
+
+        self.delete_commandfile()
+        if strDelete=="yes" :
+            #logging.debug("files to delete 2 %s",delfiles)
+            self.delete_files(delfiles)
+
+        strResource=""
+        #print bTimeout 
+        if isExit or bTimeout:
+            listFailJob.append(self.hostname)
+            (strOut, strErr) = self.print_out_process_result(MODE_STDERR, listStdErr, savefileErr)
+        else:
+            if strErrorHandle == "all":
+                if not( p.poll() == 0 and ( len(strErr)==0 or strErr.startswith("[timeresult]") )):
+                    listFailJob.append(self.hostname)
+                    
+                if len(strErr)>0:
+                    if strErr.startswith("[timeresult]"):
+                        strResource=self.analyze_resource(strErr.rstrip('\n'), nSaveMode)
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDOUT, listStdOut, savefileOut)
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDERR, listStdErr, savefileErr)
+                else:
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDOUT, listStdOut, savefileOut)
+
+            elif strErrorHandle == "stderr":
+                if len(strErr)>0 and (not strErr.startswith("[timeresult]")):
+                        listFailJob.append(self.hostname)
+
+                if len(strErr)>0:
+                    if strErr.startswith("[timeresult]"):
+                        strResource=self.analyze_resource(strErr.rstrip('\n'), nSaveMode)
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDOUT, listStdOut, savefileOut)
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDERR, listStdErr, savefileErr)
+                else:
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDOUT, listStdOut, savefileOut)
+            else:
+                if p.poll() <> 0:
+                    listFailJob.append(self.hostname)
+
+                if len(strErr)>0:
+                    if strErr.startswith("[timeresult]"):
+                        strResource=self.analyze_resource(strErr.rstrip('\n'), nSaveMode)
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDOUT, listStdOut, savefileOut)
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDERR, listStdErr, savefileErr)
+                else:
+                    (strOut, strErr) = self.print_out_process_result(MODE_STDOUT, listStdOut, savefileOut)
+
+        if bOriginalMsg:
+            strOut=strOut.strip('\n')
+            strErr=strErr.strip('\n')
+
+        if strPrintMode=="success":
+            if nSaveMode==2:
+                self.save_result(savefileOut, strOut)
+                self.save_result(savefileErr, '')
+            else:
+                self.save_result(savefileOut, strOut)
+        elif strPrintMode=="error":
+            if nSaveMode==2:
+                self.save_result(savefileErr, strErr)
+                self.save_result(savefileOut, '')
+            else:
+                self.save_result(savefileErr, strErr)
+        elif strPrintMode=="no":
+            if nSaveMode==2:
+                self.save_result(savefileOut, '')
+                self.save_result(savefileErr, '')
+            else:
+                self.save_result(savefileOut, '')
+        else:
+            if nSaveMode==2:
+                self.save_result(savefileOut, strOut)
+                self.save_result(savefileErr, strErr)
+            else:
+                self.save_result(savefileOut, strOut+strErr)
+
+        if len(strResource)>0: 
+            #print >> sys.stderr, strResource
+            outputDevice.nPrintErr(strResource,OutputDeviceWrapper.ERROR)
+
+        if strDebugMode=="yes":
+            #print >> sys.stderr, ("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+"[DBG] finish command."
+            outputDevice.nPrintErr( ("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+"[DBG] finish command.",OutputDeviceWrapper.ERROR)
+
+
+    ## saves results to savefile
+    def save_result(self, savefile, result):
+        if result==None: result=""
+        if savefile!=None:
+            if not savefile.closed:
+                if len(result)>0: print >> savefile, result
+                savefile.close()
+        else:
+            if len(result)>0: outputDevice.nPrint(result,OutputDeviceWrapper.NORMAL)#print result
+
+    ## checks the existance of the file which is you are trying to send
+    def exist_file(self, filepath):
+        try:
+            filename = os.path.basename(filepath)
+            if DIST_REMOTE_HOME!=' ' and  DIST_REMOTE_HOME!='':
+                slash='/'
+            else:
+                slash=' '
+            strLine="ssh -q -o NumberOfPasswordPrompts=0 -o ConnectTimeout=%d %s 'ls %s%s%s 2> /dev/null | wc -l'"%(nConnectionTimeout, self.hostname, DIST_REMOTE_HOME,slash, filename)
+
+            status, output = commands.getstatusoutput(strLine)
+            if status==0:
+                if output=="0":
+                    return False, ""
+                else:
+                    return True, "%s%s%s already exists."%(DIST_REMOTE_HOME,slash,filename)
+            elif status==256:
+                if output=="0":
+                    return False, ""
+        except:
+            pass
+        return True, "cannot access host."
+    
+    ## sends files to remote hosts (before executing a command)
+    def move_files(self):
+        lst = [];
+        transfiles = [];
+        
+        if strSendFiles!=None:
+            lst=strSendFiles.split()
+        else:
+            return 0, "", transfiles
+
+        for f in lst:
+            f = f.replace("@DIST_HOST", self.hostname)
+
+            if strOverwrite == "no":
+                status, output = self.exist_file(f)
+                if status:    
+                    return 1, output, transfiles
+            strLine="scp -q -o NumberOfPasswordPrompts=0 -o ConnectTimeout=%d -p %s %s:%s"%(nConnectionTimeout, f, self.hostname, DIST_REMOTE_HOME)
+            #logging.debug("move_files %s"%strLine)
+            status, stdErr = commands.getstatusoutput(strLine)
+            if status==0:
+                transfiles.append(f)
+            else:
+                return status, stdErr.rstrip('\n'), transfiles
+
+        return 0, "", transfiles
+
+    ## deletes files of the remote hosts
+    def delete_files(self, delfiles):
+
+        #logging.debug("files to delete 3 %s",delfiles)
+        if DIST_REMOTE_HOME!=' ' and DIST_REMOTE_HOME!='':
+        #if DIST_REMOTE_HOME!=' ' :
+            slash='/'
+        else:
+            slash=' '
+
+        for theFile in delfiles:
+            #logging.debug("files to delete 4 %s",theFile)
+            if len(theFile.strip())==0: continue
+
+            filename = os.path.basename(theFile)
+            strLine="ssh -q -o NumberOfPasswordPrompts=0 -o ConnectTimeout=%d %s rm -f %s%s%s"%(nConnectionTimeout, self.hostname, DIST_REMOTE_HOME,slash,filename)
+            status, output = commands.getstatusoutput(strLine)
+            #logging.debug("files to delete 5 %s",filename)
+            #logging.debug("files to delete 6 %s",strLine)
+
+    ## replace special constants, @DIST_HOST and @DISTS_SEQ, with respective context value
+    def replace_specialconstant(self, cmd):
+
+        if cmd.find("@DIST_HOST") != -1:
+            cmd = cmd.replace('@DIST_HOST', self.hostname)
+        if cmd.find("@DIST_SEQ") != -1:
+            cmd = cmd.replace("@DIST_SEQ", str(self.seq))
+        return cmd
+
+    ## sends command shell script file to remote servers
+    def move_commandfile(self):
+        stdErr=""
+        cmd=""
+
+        if strCommand!=None:
+            user = getpass.getuser() 
+            tmpdir = '/tmp/dist/%s'%(user)
+            if not os.path.exists(tmpdir):
+                os.makedirs(tmpdir)
+                os.chmod("/tmp/dist", S_IRWXU|S_IRWXG|S_IROTH|S_IWOTH|S_IXOTH)
+
+            now = time.strftime("%Y%m%d%H%M%S", time.localtime(time.time()))
+            self.executefile = '%s/.tmp.dist.%s.%s.%d.sh'%(tmpdir, self.hostname, now, random.randrange(1, 100000))
+
+            try:
+                cmd = self.replace_specialconstant(strCommand)
+                f = file(self.executefile, 'w')
+                f.write("#!/bin/bash\n")
+                f.write(cmd+'\n')
+                f.close()
+                os.chmod(self.executefile, S_IRWXU|S_IRGRP|S_IROTH)
+            except Exception, ex:
+                return "", "Cannot create a cmd file."
+        elif strCommandFile!=None:
+            self.executefile = strCommandFile
+
+        if self.executefile!=None:
+            filename = os.path.basename(self.executefile)
+            strLine="scp -q -o NumberOfPasswordPrompts=0 -o ConnectTimeout=%d -p %s %s:%s"%(nConnectionTimeout, self.executefile, self.hostname, DIST_REMOTE_HOME)
+            status, stdErr = commands.getstatusoutput(strLine)
+            if status==0:
+
+                arguement = self.replace_specialconstant(strArguments)
+                if strPrintResource=="yes":
+                    if DIST_REMOTE_HOME == ' ' or DIST_REMOTE_HOME=='':
+                        cmd="ssh "+self.hostname+" \"`which time` --format='[timeresult] %e %U %S %P %M %K %k %I %O %r %s' ./"+filename+" "+arguement+"\""
+                        #logging.debug(cmd)
+                    else:
+                        cmd='''ssh %s "HOME=%s;cd \$HOME;'''%(self.hostname, DIST_REMOTE_HOME) + '''`which time` --format='[timeresult] %e %U %S %P %M %K %k %I %O %r %s' ''' + '''./%s %s"'''%(filename, arguement)
+                        #logging.debug(cmd)
+                else:
+                    if DIST_REMOTE_HOME == ' '  or DIST_REMOTE_HOME=='':
+                        cmd='''ssh %s ./%s %s'''%(self.hostname, filename, arguement)
+                        #logging.debug(cmd)
+                    else:
+                        cmd='''ssh %s "HOME=%s;cd \$HOME;./%s %s"'''%(self.hostname, DIST_REMOTE_HOME, filename, arguement)
+                        #logging.debug(cmd)
+            else:
+                if strCommand!=None and strCommandFile==None:
+                    if os.path.exists(self.executefile):
+                        os.remove(self.executefile)
+                stdErr = "Cannot access a host."
+
+        else:
+            stdErr = "Can't find a cmd file"
+
+        return cmd, stdErr.rstrip('\n')
+
+
+    ## deletes command shell script file at remote servers
+    def delete_commandfile(self):
+        if self.executefile!=None:
+            filename = os.path.basename(self.executefile)
+            if DIST_REMOTE_HOME!=' ' and DIST_REMOTE_HOME!='':
+            #if DIST_REMOTE_HOME!=' ' :
+                slash='/'
+            else:
+                slash=' '
+            if (  filename.startswith('tmp.dist.') and filename.endswith('.sh') ) or \
+                ( filename.startswith('.tmp.dist.') and filename.endswith('.sh') ):
+                #strLine='''ssh %s "cd %s;rm -f %s;find .tmp.dist.*.sh -type f -mtime +1 -exec rm -rf {} \; &> /dev/null"'''%(self.hostname, DIST_REMOTE_HOME, filename)
+                strLine='''ssh %s "cd %s;rm -f %s;find .tmp.dist.*.sh -type f -mtime +1 -exec rm -rf {} \; 2> /dev/null"'''%(self.hostname, DIST_REMOTE_HOME, filename) 
+            else:
+                strLine="ssh %s 'rm -f %s%s%s 2> /dev/null'"%(self.hostname, DIST_REMOTE_HOME,slash, filename)
+            status, output = commands.getstatusoutput(strLine)
+
+        if strCommand!=None and strCommandFile==None:
+            if os.path.exists(self.executefile):
+                os.remove(self.executefile)
+
+
+    ## counts CPU usage, etc
+    def analyze_resource(self, resource, savemode=0, originalflag=False):
+        global listRealTime
+        global listUserTime
+        global listSysTime
+        global listAveCpu
+        global listMaxMem
+        global listAveMem
+        global listSignal
+        global listInFile
+        global listOutFile
+        global listRecvMsg
+        global listSendMsg
+
+        try:
+            prefix=None
+            listResource=resource.split(" ")
+
+            if savemode!=0:
+                if originalflag:
+                    prefix='[MSG] '
+                else:
+                    prefix=("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+'[MSG] '
+
+                temp=     prefix+'real_time = %-5s\n'
+                temp=temp+prefix+'user_time = %-5s\n'
+                temp=temp+prefix+'sys_time  = %-5s\n'
+                temp=temp+prefix+'ave_cpu   = %-5s\n'
+                temp=temp+prefix+'max_mem   = %-5s\n'
+                temp=temp+prefix+'ave_mem   = %-5s\n'
+                temp=temp+prefix+'signals   = %-5s\n'
+                temp=temp+prefix+'in_file   = %-5s\n'
+                temp=temp+prefix+'out_file  = %-5s\n'
+                temp=temp+prefix+'recv_msg  = %-5s\n'
+                temp=temp+prefix+'send_msg  = %-5s\n'
+                resource = temp % (listResource[1],
+                                   listResource[2],
+                                   listResource[3],
+                                   listResource[4],
+                                   listResource[5],
+                                   listResource[6],
+                                   listResource[7],
+                                   listResource[8],
+                                   listResource[9],
+                                   listResource[10],
+                                   listResource[11])
+            else:
+                prefix=outputDevice.nSetColor(OutputDeviceWrapper.INFO)+("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+outputDevice.nSetColor(OutputDeviceWrapper.WARNING)+'[MSG] '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=     prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'real_time'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'user_time'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'sys_time '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'ave_cpu  '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'max_mem  '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'ave_mem  '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'signals  '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'in_file  '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'out_file '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'recv_msg '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                temp=temp+prefix+outputDevice.nSetColor(OutputDeviceWrapper.ETC)+'send_msg '+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+' = '+outputDevice.nSetColor(OutputDeviceWrapper.ERROR2)+'%-5s\n'+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+                resource = temp % (listResource[1],
+                                   listResource[2],
+                                   listResource[3],
+                                   listResource[4],
+                                   listResource[5],
+                                   listResource[6],
+                                   listResource[7],
+                                   listResource[8],
+                                   listResource[9],
+                                   listResource[10],
+                                   listResource[11])
+            #print strResource
+            listRealTime.append(listResource[1])
+            listUserTime.append(listResource[2])
+            listSysTime.append(listResource[3])
+            listAveCpu.append(listResource[4])
+            listMaxMem.append(listResource[5])
+            listAveMem.append(listResource[6])
+            listSignal.append(listResource[7])
+            listInFile.append(listResource[8])
+            listOutFile.append(listResource[9])
+            listRecvMsg.append(listResource[10])
+            listSendMsg.append(listResource[11])
+        except Exception, ex:
+            resource=''
+        return resource
+
+    ## prints process result, unbuffered
+    def print_in_process_result(self, type, lst, savefile):
+        
+        outcolor = OutputDeviceWrapper.INFO
+        errcolor = OutputDeviceWrapper.ERROR
+
+        if strErrorHandle == "code":
+            outcolor = OutputDeviceWrapper.INFO 
+            errcolor = OutputDeviceWrapper.ERROR2
+
+        if lst==None: lst=[]
+        if type==True:
+            prefix=("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+'[OUT] '
+            header_color=outcolor
+        else:
+            prefix=("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+'[ERR] '
+            header_color=errcolor
+
+        #prefix = prefix[:-1]
+
+#        while True:
+           # if len(lst)>=nBufferLine:
+#            for index in range(nBufferLine):
+#                if lst[0].startswith("[timeresult]"):
+#                    lst.pop(0)
+#                    continue
+#
+#                if savefile==None:
+#                    if type:
+#                        if bOriginalMsg:
+#                            outputDevice.nPrint(lst.pop(0),OutputDeviceWrapper.NORMAL )
+#                        else:
+#                            outputDevice.nPrint(prefix,outcolor,1)
+#                            outputDevice.nPrint(lst.pop(0), OutputDeviceWrapper.NORMAL)
+#                    else:
+#                        if bOriginalMsg:
+#                            outputDevice.nPrint(lst.pop(0), errcolor )
+#                        else:
+#                            outputDevice.nPrint(prefix+lst.pop(0),errcolor)
+#                else:
+#                    if bOriginalMsg:
+#                        print >> savefile, lst.pop(0)
+#                    else:
+#                        print >> savefile, prefix+" "+lst.pop(0)
+#            time.sleep(0.0)
+#        else:
+        while len(lst) >0 :
+#            if ((printTime+nBufferFlushTime)-time.time())<=0:
+#                logging.debug("%s %s %s %s "%(printTime, time.time() ,nBufferFlushTime,((printTime+nBufferFlushTime)-time.time()) ))
+            for index in range(len(lst)) :
+                if lst[0].startswith("[timeresult]"):
+                    lst.pop(0)
+                    continue
+
+                if savefile==None:
+                    if type:
+                        if bOriginalMsg:
+                            printQueue.put((lst.pop(0),OutputDeviceWrapper.NORMAL,0))                     
+                            #outputDevice.nPrint(lst.pop(0),OutputDeviceWrapper.NORMAL)
+                        else:
+                        #    printLock.acquire()
+                            #printQueue.put((prefix,outcolor,1))                     
+                            printQueue.put((outputDevice.nSetColor(header_color)+prefix+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+lst.pop(0),OutputDeviceWrapper.NORMAL,0))                     
+                          #  print printQueue.qsize()
+                          #  print nBufferLine
+                        #    printLock.release()
+                            #outputDevice.nPrint(prefix,outcolor,1)
+                            #outputDevice.nPrint(lst.pop(0),OutputDeviceWrapper.NORMAL)
+                    else:
+                        if bOriginalMsg:
+                            printQueue.put((lst.pop(0),errcolor,0))                     
+                            #outputDevice.nPrint(lst.pop(0), errcolor )
+
+                        else:
+                            printQueue.put((prefix+lst.pop(0),errcolor,0))
+                            #outputDevice.nPrint(prefix+lst.pop(0),errcolor)
+                else:
+                    if bOriginalMsg:
+                        print >> savefile, lst.pop(0)
+                    else:
+                        print >> savefile, prefix+lst.pop(0)
+#            time.sleep(0.0)
+#                break
+
+        #logging.debug(time.time())
+        #return time.time()
+
+    ## prints process result, buffered
+    def print_out_process_result(self, type, list, savefile):
+
+
+        buff=[]
+        outcolor = OutputDeviceWrapper.INFO
+        errcolor = OutputDeviceWrapper.ERROR
+
+        if list==None or len(list)==0: return '', ''
+
+        if type==True:
+            prefix=("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+'[OUT] '
+        else:
+            prefix=("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+'[ERR] '
+
+        if strErrorHandle == "code":
+            outcolor = OutputDeviceWrapper.INFO
+            errcolor = OutputDeviceWrapper.ERROR2
+
+
+        for index in range(len(list)):
+            if list[0].startswith("[timeresult]"):
+                list.pop(0)
+                continue
+
+            if savefile==None:
+                if type:
+                    if bOriginalMsg:
+                        buff.append(list.pop(0))
+                    else:
+                        buff.append(outputDevice.nSetColor(outcolor)+prefix+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)+list.pop(0))
+                else:
+                    if bOriginalMsg:
+                        buff.append(outputDevice.nSetColor(errcolor)+list.pop(0)+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL))
+                    else:
+                        buff.append(outputDevice.nSetColor(errcolor)+prefix+list.pop(0)+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL))
+            else:
+                if bOriginalMsg:
+                    buff.append(list.pop(0))
+                else:
+                    buff.append(prefix+list.pop(0))
+
+        if strPrintSummary=="no":
+            if savefile==None:
+                print '\n'.join(buff) 
+            else:
+                print >> savefile, '\n'.join(buff)
+            buff=[]
+
+        if type:
+            return '\n'.join(buff), ''
+        else:
+            return '', '\n'.join(buff)
+
+    ## prints error messages
+    def print_error_msg(self, message):
+        if strPrintMode!="success" and strPrintMode!="no":
+            if strSaveDir!=None:
+                if nSaveMode==1:
+                    savefile = open(strSaveDir+'/'+self.hostname, 'w')
+                else:
+                    savefile = open(strSaveDir+'/'+self.hostname+'.err', 'w')
+                if bOriginalMsg:
+                    print >> savefile, message
+                else:
+                    print >> savefile, ("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+"[ERR] "+message
+                savefile.close()
+            else:
+                if bOriginalMsg:
+                    printQueue.put((message,OutputDeviceWrapper.ERROR,0))
+                    #outputDevice.nPrint(prefix+lst.pop(0),errcolor)
+                    #outputDevice.nPrint(message,OutputDeviceWrapper.ERROR)
+                else:
+                    #outputDevice.nPrint(("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+"[ERR] "+message, OutputDeviceWrapper.ERROR)
+                    printQueue.put((("%-"+str(nMaxLength)+"s")%("["+self.hostname+"]")+"[ERR] "+message,OutputDeviceWrapper.ERROR,0))
+
+
+
+
+# function list
+
+## 
+#        @function usage
+#        @brief prints Usage 
+#        @remarks 
+def usage():
+
+    global outputDevice
+    outputDevice.nPrint("dist Version : 1.2.20090401",OutputDeviceWrapper.NORMAL,0)
+    outputDevice.nPrint("Copyrights (C) 2007-2009 NHN Corp.", OutputDeviceWrapper.NORMAL,0)  
+    outputDevice.nPrint(  "                         jibong96@nhncorp.com", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         jsohn@nhncorp.com", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "This Program is under the GPL License.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "dist comes with ABSOLUTELY NO WARRANTY.  This is free software, and you", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "are welcome to redistribute it under certain conditions. ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  " ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "dist is a remote control program that let you execute interactive shell console", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "programs of multiple remote systems, using ssh or other remote shell.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  " ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "Usage : dist [-h] [-H] [-F 1/2] [-q query [-D delim]] [-i] [-e a/c/s] ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [-s 'file1 file2' [-o]] ([-r [-v a/s/e/n]] | ([-L num] [-T milisec])) ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [-w] [-O] [-p] [-t sec] [-d milisec] [-u] [-n num] [--nolog] ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [--seq_offset=] ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [--do_not_print_query] ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [--do_not_sort] ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [--no_summary] [--do_not_delete] [--connection_timeout=sec]  ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [--DIST_REMOTE_HOME=dir] [--DIST_SERVERGROUP_DIR=dir]  ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [--DIST_HISTORY_FILE=file]   ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        [--DIST_RC_FILE=file]   ", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "        -c/f command(file) server1, ...", OutputDeviceWrapper.ERROR2)
+    outputDevice.nPrint(  "   1) : dist -h", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   2) : dist -H", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   3) : dist -c 'shell script' server, ...", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   4) : dist -c ls xyz0001 xyz0002 xyz0003", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   5) : dist -c \"ls | wc -l\" xyz0001~xyz0010 xxx0001~xxx0010+2", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   6) : dist -c ls ./serverlist.txt", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   7) : dist -q \"SERVICE='sales' and PROGRAM='dispatcher'\" -D '\\n'", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   8) : dist -q \"SERVICE='sales' and PROGRAM='dispatcher'\" -D '\\n' 2> /dev/null", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   9) : dist -q \"HOST like 'e099%' and SERVICE='mainternance' limit 10\" -c ls server1 server2 ", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   10) : dist -q \"SERVICE='sales'\" -c ls transaction_storage", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   12) : dist -L5 -T500 -c ls svr001.yourdomain.com~svr010.yourdomain.com", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   13) : dist -O -c ls xyz0001", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   14) : dist -p -c 'sleep 1' xyz0001", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   15) : dist -r -c ls svr001~svr010", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   16) : dist -w -c ls svr001~svr010", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   17) : dist -c 'tail -f spider2000.log' e0993 e0994", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   18) : dist -t 10 -c 'tail -f spider2000.log' e0993 e0994", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   19) : dist -n3 -f sample1.sh ~/servergroup/transaction_storage.txt", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   20) : dist -u -c 'ls | wc -l' xxx0001 xxx0001 xxx0001 ", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   21) : dist -c 'ls | wc -l' xxx0001 xxx0001 xxx0001", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   22) : dist -s 'program.tgz' -c 'tar xvzf program.tgz' serverlist", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   23) : dist -s 'program.tgz' -o -c 'tar xvzf program.tgz' serverlist", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   24) : dist -F 1 -c ls serverlist", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   25) : dist -F 2 -c ls serverlist", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   26) : dist -c 'echo @DIST_HOST; echo @DIST_SEQ' xxx0001 xxx0002", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   27) : dist -s '@DIST_HOST.sh' -c @DIST_HOST.sh xxx0001 xxx0002", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   28) : dist -c 'sleep 60 > /dev/null 2>&1 &' xxx0003", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   29) : dist -c 'pgrep -l -f sleep' xxx0003", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   30) : dist -c \"pkill -9 -f 'sleep 60'\" xxx0003", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   31) : dist -c \"ps -ef --cols 500 | egrep 'sleep' | grep -v grep \\", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "         | grep -v vim | awk '{print \$2}'\" xxx0003", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "", OutputDeviceWrapper.ETC)
+    outputDevice.nPrint(  "   -h   help", OutputDeviceWrapper.INFO)
+    outputDevice.nPrint(  "   -H   command history  ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "max history number is 100.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -c   command          ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "a command to run in remote server.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -f   command file     ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "a command file to run in remote server.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -d   delay time       ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "default delay time among threads is 0 milisec.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -n   thread number    ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "default thread number is the number of server list.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -F     save result    ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "save results to ./dist-out directory.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if 'dist-out' doesn't exist, it'll make 'dist-out' ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "directory.  if '-F' is '1', it will make only one ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "file per one server. if '-F' is '2', it will make ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "two files per one server. one is stdout, the other ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "is stderr.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -e     error handler  ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "how to detect a error", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if it is 'a', it will detect a error by return code ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "or stderr.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if it is 'c', it will detect a error by return code.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if it is 's', it will detect a error by stderr.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -i     do not ask     ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "do not ask when you use 'kill', 'rm' commands.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "this option works when commands(kill, rm) use in ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "-c option.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -L     buffer line    ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if there are 10 lines in buffer, messages will be ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "printed.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if '-r' exists, this option will be ignored.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "default value is 10.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -T     flush time     ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "default value is 1000 milisec.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if '-r' exists, this option will be ignored.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -r     report         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "all messages of a server will be printed at all time.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "output will not be printed until a process completes.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "'-r' has no relation to '-L' and '-T' options.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -q     server query   ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "get a server list from a machine database.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "The set of possible levels is HOST, SERVICE, ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "PROGRAM, PORT and FUNCTION.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if -c or -f doesn't exist, it'll print just hostnames.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -D     delimiter      ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "-D is delimiter of server list.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -s     send files     ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "file list to send to the server before running ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "command. if a file exists, it'll stop this command.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -o     overwrite      ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "In -s option, if a file exist, it'll overwrite.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -u     unique disable ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "allow duplicated hostnames. you can run a command  ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                          several times.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -t     timeout        ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "default timeout is 0 sec. (it's running timeout. ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "not idle timeout)", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -v     verbose        ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "parameter is a mode to print. default value of ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "'v' is 'all'.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if '-v' is 'a', it'll print all messages.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if '-v' is 's', it'll print success messages.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if '-v' is 'e', it'll print error messages.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if '-v' is 'n', it'll display only summary ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "information.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "if -r option exists. it'll work this option.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -O     original msg   ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "it'll display original messages.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "this program doesn't touch result messages", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -p     debug message  ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "it'll display debug message.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   -w     watch resource ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "determine whether it prints resource status ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "of server to run.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --nolog               ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "doesn't save current command into the history file.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --no_summary          ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "doesn't print summary.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --do_not_print_query  ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "doesn't print machine db query.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --do_not_delete       ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "use with -s. Dist does not delete the sent file.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --do_not_sort       ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "same as -u, and dist does not sort the server list.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --connection_timeout  ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "connecton timeout for sshd. default value is 10 sec.\n\n", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --DIST_REMOTE_HOME=dir", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "     home directory of remote target server's account.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "     If master server's account is different with ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "                         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "     target server's account, do not use '~'  ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --DIST_SERVERGROUP_DIR=dir", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  " designates server list file's location. ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --DIST_HISTORY_FILE=file", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "   history file of dist.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --DIST_RC_FILE=file", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "        configuration file of dist.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --exclude_list=file", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "        name of a 'exclude list' file.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   --seq_offset=         ", OutputDeviceWrapper.INFO,1)
+    outputDevice.nPrint(  "     @DIST_SEQ starts with the offset", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "", OutputDeviceWrapper.INFO)
+    outputDevice.nPrint(  "SPECIAL VARIABLES     ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   @DIST_HOST ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "            hostname of the server to run a command.", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "   @DIST_SEQ  ", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "            position after hostname sorting", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "http://dev.naver.com/projects/dist", OutputDeviceWrapper.NORMAL)
+    outputDevice.nPrint(  "", OutputDeviceWrapper.NORMAL)
+
+def exit_program(signum, f):
+    global isExit
+    global listFailJob
+    global pool
+    global pool2
+
+    isExit=True
+    pool.terminate()
+    pool2.terminate()
+    #print dictChildPid
+    for hostname, cmdfile in dictChildPid.items():
+        host = hostname[5:]
+        ppid = get_processid(host, cmdfile)
+        get_all_processlist(0, host, ppid)
+
+
+    
+
+    #pool=None
+    #pool2=None
+
+
+    cmd = "pkill -9 -P %s"%(os.getpid())
+    status, output = commands.getstatusoutput(cmd)
+
+def kill_processlist(hostname, pids):
+    if pids==None or len(pids)==0: return
+
+    cmd = '''ssh -q -o NumberOfPasswordPrompts=0 -o ConnectTimeout=%d %s "kill -9 %s"'''%(nConnectionTimeout, hostname, ' '.join(pids))
+
+    status, output = commands.getstatusoutput(cmd)
+    if status==0: 
+        pids = output.split('\n')
+
+def get_processid(hostname, cmdfile):
+    rootpid = []
+    cmd = '''ssh -q -o NumberOfPasswordPrompts=0 -o ConnectTimeout=%d %s "pgrep -l -f '%s' 2> /dev/null"'''%(nConnectionTimeout, hostname, cmdfile)
+    handle = os.popen(cmd)
+    pids = handle.readlines()
+    handle.close()
+
+    for pid in pids:
+        items = pid.split(' ', 1)
+        if pid.strip('\n\r').find("pgrep -l -f '%s' 2> /dev/null"%(cmdfile))>=0:
+            continue
+
+        if pid.strip('\n\r').startswith("ssh"):
+            continue
+
+        rootpid.append(items[0])
+
+    if len(rootpid)<1:
+        rootpid = []
+        
+    return rootpid
+    
+def get_processlist(hostname, ppid):
+    cmd = '''ssh -q -o NumberOfPasswordPrompts=0 -o ConnectTimeout=%d %s "pgrep -P '%s' 2> /dev/null"'''%(nConnectionTimeout, hostname, ppid)
+    handle = os.popen(cmd)
+    lst = handle.readlines()
+    handle.close()
+
+    pids = []
+    for pid in lst:
+        pids.append(pid.strip('\n\r'))
+
+    return pids
+
+def get_all_processlist(depth, hostname, ppids):
+    pids = []
+    
+    if depth>300 or ppids == []: return
+
+    for ppid in ppids:
+        cpids = get_processlist(hostname, ppid)
+        pids += cpids
+
+    kill_processlist(hostname, ppids)
+
+    depth = depth + 1
+    get_all_processlist(depth, hostname, pids)
+
+def get_maxhostname():
+    maxi=0
+
+    for server in listServer:
+        length=len(server)
+        if length>maxi: maxi=length
+    if maxi < 7:
+        maxi = 7
+    return maxi
+
+def make_savedir():
+    savedir=None
+
+    if nSaveMode!=0:
+        try:
+            savedir='./dist-out/'+time.strftime('%Y%m%d-%H%M%S')
+            if not os.path.exists(savedir):
+                os.makedirs(savedir)
+            handle = os.popen("rm -f ./dist-out.last 2> /dev/null")
+            pids = handle.readlines()
+            handle.close()
+
+            os.symlink(savedir, 'dist-out.last')
+        except Exception, ex:
+            outputDevice.nPrint( str(ex) )
+
+            savedir=None
+    else:
+        pass #print nSaveMode, savedir
+    return savedir
+
+def parsing_hostname(hostname):
+    lst=hostname.split('.')
+    prefix=lst[0]
+    if len(lst)>1:
+        postfix='.'+'.'.join(lst[1:])
+    else:
+        postfix=''
+    for index in range(len(prefix)):
+        if prefix[index:].isdigit(): break
+    return prefix[:index], postfix, int(prefix[index:]), len(prefix[index:]),prefix[index]
+
+def print_serverlist(servers):
+    global DB_DBTABLENAME
+
+    if nHowToGetSvrList==MODE_DB:
+        limit=''
+        db = DB()
+        query = "SELECT DISTINCT(HOST) FROM "
+        query = query + DB_DBTABLENAME
+        if strWhere!="":
+            where = " WHERE " + strWhere.upper()
+
+        if where.find('LIMIT')!=-1 :
+            limit='LIMIT'+str(where.split('LIMIT')[1])
+            where=where.split('LIMIT')[0];
+            
+        #rs = db.dbselect(query+where + " ORDER BY HOST")
+        #rs = db.dbselect(query+where + " ORDER BY HOST"+limit)
+        new_query = query+where + " ORDER BY HOST "+limit
+        rs = db.dbselect(new_query)
+        if rs==None:
+            outputDevice.nPrintErr(("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[ERR] QUERY = %s %s"%(query, where),OutputDeviceWrapper.ERROR)
+            return
+    
+        if bPrintQuery : 
+            outputDevice.nPrintErr(("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[MSG]",OutputDeviceWrapper.INFO,1)
+            outputDevice.nPrintErr("QUERY =",OutputDeviceWrapper.WARNING,1)
+            #outputDevice.nPrintErr("%s %s %s"%(query, where, limit),OutputDeviceWrapper.WARNING)
+            outputDevice.nPrintErr("%s"%(new_query),OutputDeviceWrapper.WARNING)
+
+    if strDelim==None:
+        for server in servers:
+            outputDevice.nPrint( "%-10s"%(server), OutputDeviceWrapper.NORMAL)
+    else:
+        output = ''
+        delim = strDelim
+        delim = delim.replace('\\n', '\n')
+        delim = delim.replace('\\r', '\r')
+        delim = delim.replace('\\t', '\t')
+
+        for server in servers:
+            output = output + server + delim
+        outputDevice.nPrint( output.rstrip(delim), OutputDeviceWrapper.NORMAL)
+
+def get_serverlist_from_db():
+    global DB_DBTABLENAME
+
+    svrlist = []
+
+    db = DB()
+    query = "SELECT DISTINCT(HOST) FROM "
+    query = query + DB_DBTABLENAME
+    if strWhere!="":
+        where = " WHERE " + strWhere.upper()
+
+    rs = db.dbselect(query+where)
+
+    if rs==None :
+    #if rs==None or len(rs)==0:
+        outputDevice.nPrintErr( "\n%-8s"%"QUERY = "  ,OutputDeviceWrapper.WARNING,1)
+        outputDevice.nPrintErr(query + "\n%-7s%s\n"%("",where)  ,OutputDeviceWrapper.ERROR)
+        #usage()
+        sys.exit(1)
+
+    for r in rs:
+        svrlist.append("%s"%(r['HOST']))
+    return svrlist
+
+def get_serverlist(list):
+    global nWarningJob
+    last=None
+    server_count_method=1
+                            #server_count_method 1  001~100
+                            #server_count_method 2  1~100
+
+    if len(list)==0 and len(listServer)==0:
+        outputDevice.nPrintErr(("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[ERR] Cannot find server list.",OutputDeviceWrapper.ERROR)
+        #usage()
+        sys.exit(-1);
+
+    onepasslist = []
+    twopasslist = []
+
+    for server in list:
+        # load server list form a file
+        if os.path.exists("%s/%s.txt"%(DIST_SERVERGROUP_DIR, server)):
+            lines = ""
+            f=open("%s/%s.txt"%(DIST_SERVERGROUP_DIR, server), 'r')
+            lines = ' '.join(f.readlines())
+            f.close()
+            onepasslist = onepasslist + lines.split()
+        elif os.path.exists(server):
+            lines = ""
+            f=open(server, 'r')
+            lines = ' '.join(f.readlines())
+            f.close()
+            onepasslist = onepasslist + lines.split()
+        else:
+            onepasslist.append(server);
+
+    for server in onepasslist:
+        if server=="": continue
+        if server.find('~')>0 or server.find(os.path.expanduser('~'))>0:
+            if server.find(os.path.expanduser('~'))>0:
+                server=server.replace(os.path.expanduser('~'), ' ')
+            if server.find('+')>0:
+                server=server.replace('+', ' ')
+            if server.find('~')>0:
+                server=server.replace('~', ' ')
+
+            listItems=server.split()
+
+            if len(listItems)!=2 and len(listItems)!=3:
+                outputDevice.nPrintErr(("%-"+str(nMaxLength)+"s")%"[PROGRAM]"+ \
+                             "[ERR] hostname is wrong. ex) svr001~svr010 or svr001.domain-name.com~svr010.domain-name.com+2",OutputDeviceWrapper.ERROR)
+                sys.exit(-1)
+
+            prefix1,postfix1,start,length1,first_digit1=parsing_hostname(listItems[0])
+            prefix2,postfix2,end,length2,first_digit2=parsing_hostname(listItems[1])
+
+            if prefix1!=prefix2 or postfix1!=postfix2  :
+                outputDevice.nPrintErr( ("%-"+str(nMaxLength)+"s")%"[PROGRAM]"+ \
+                             "[ERR] hostname is wrong. ex) svr001~svr010 or svr001.domain-name.com~svr010.domain-name.com+2",OutputDeviceWrapper.ERROR)
+                sys.exit(-1)
+
+            if length1!=length2 :
+                if first_digit1=='0' or first_digit2=='0':
+                    outputDevice.nPrintErr( ("%-"+str(nMaxLength)+"s")%"[PROGRAM]"+ \
+                             "[ERR] hostname is wrong. ex) svr001~svr010 or svr001.domain-name.com~svr010.domain-name.com+2",OutputDeviceWrapper.ERROR)
+                    sys.exit(-1)
+                else:
+                    server_count_method=2
+
+            if len(listItems)==2:  # "start_server end_server"
+                if server_count_method==1:
+                    for index in range(start, end+1):
+                        twopasslist.append(prefix1+("%0"+str(length1)+"d")%index+postfix1)
+                else:
+                    for index in range(start, end+1):
+                        twopasslist.append(prefix1+"%d"%index+postfix1)
+            else: # "start_server end_server interval"
+                if not listItems[2].isdigit():
+                    outputDevice.nPrintErr( ("%-"+str(nMaxLength)+"s")%"[PROGRAM]"+ \
+                             "[ERR] hostname is wrong. ex) svr001~svr010 or svr001.domain-name.com~svr010.domain-name.com+2",OutputDeviceWrapper.ERROR)
+                    sys.exit(-1)
+
+                if server_count_method==1:
+                    for index in range(start, end+1, int(listItems[2])):
+                        twopasslist.append(prefix1+("%0"+str(length1)+"d")%index+postfix1)
+                else:
+                    for index in range(start, end+1, int(listItems[2])):
+                        twopasslist.append(prefix1+"%d"%index+postfix1)
+        else:
+            twopasslist.append(server);
+
+    if strSort=="yes" :
+        twopasslist.sort()
+
+    if strSort=="yes" and strHostUnique=="yes":
+        # remove duplicated server
+        last = ""
+        x = range(len(twopasslist))
+        x.reverse()
+        for pos in x:
+            server = twopasslist[pos]
+            if last==server:
+                # finding method change
+                del twopasslist[pos]
+                nWarningJob=nWarningJob+1
+                outputDevice.nPrintErr( ("%-"+str(nMaxLength)+"s")%"[PROGRAM]"+ \
+                             ("[WRN] %r job requested  discarded, hostname is duplicated" % server),OutputDeviceWrapper.ERROR2)
+            else: last=server
+
+    return twopasslist
+
+
+def check_arguement():
+    global strCommand
+    global strCommandFile
+    global strPrintMode
+    global nSaveMode
+    global strArguments
+
+    # check input parameter
+    if strPrintSummary=="no" and strPrintMode!="all":
+        outputDevice.nPrintErr( ("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[ERR] You have to use -v option with -r option.",OutputDeviceWrapper.ERROR)
+        sys.exit(-1)
+
+    if strCommandFile!=None:
+        listArgs=strCommandFile.strip().split(None, 1)
+        strCommandFile=listArgs[0]
+        if len(listArgs) > 1:
+            strArguments=listArgs[1]
+
+        if not os.path.exists(strCommandFile):
+            outputDevice.nPrintErr( ("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[ERR] Cannnot file a command file.",OutputDeviceWrapper.ERROR)
+
+            usage()
+            sys.exit(-1)
+
+       
+    if strCommand==None and strCommandFile==None:
+        usage()
+        sys.exit(-1)
+
+    if strCommand<>None:
+        if strDonotask == "no" and re.search('rm\s+\S*|kill\s+\S*|killall\s+\S*', strCommand):
+            msg = outputDevice.nSetColor(OutputDeviceWrapper.INFO)+("%-"+str(nMaxLength)+"s")%("[PROGRAM]")
+            msg = "%s[MSG]%s dangerous command = %s%s%s, really? (Yes/No) "%(msg, outputDevice.nSetColor(OutputDeviceWrapper.WARNING), outputDevice.nSetColor(OutputDeviceWrapper.ERROR), strCommand, outputDevice.nSetColor(OutputDeviceWrapper.WARNING))+outputDevice.nSetColor(OutputDeviceWrapper.NORMAL)
+            response = raw_input(msg)
+            if not (response.lower() == 'y' or response.lower() == 'yes'):
+                outputDevice.nPrintErr(("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[ERR] Cannnot execute a command.",OutputDeviceWrapper.ERROR)
+                sys.exit(-1)
+
+    if nSaveMode!=1 and nSaveMode!=2:
+        nSaveMode=0
+
+
+def get_resource_data(list):
+    maxi=0.0
+    summ=0.0
+    ave=0.0
+
+    num=len(list)
+    if num>0:
+        for value in list:
+            value = value.strip('%')
+            if value.isdigit():
+                value = float(value)
+                summ=summ+value
+                if maxi<value: maxi=value
+        ave=summ/num
+    return ave, maxi
+
+def print_statistics():
+    #prefix=term.CYAN+("%-"+str(nMaxLength)+"s")%("[SUMMARY]")
+
+    if strPrintResource=="yes":
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr(("[MSG] real_time = %.2f(%.2f)")%get_resource_data(listRealTime) , OutputDeviceWrapper.WARNING)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] user_time = %.2f(%.2f)"%get_resource_data(listUserTime) , OutputDeviceWrapper.WARNING)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] sys_time  = %.2f(%.2f)"%get_resource_data(listSysTime),OutputDeviceWrapper.WARNING)
+        ave, maxi = get_resource_data(listAveCpu)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] ave_cpu   = %d"%ave+"%"+"(%d)"%maxi+"%",OutputDeviceWrapper.WARNING)
+        ave, maxi = get_resource_data(listSysTime)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] max_mem   = %d(%d)"%get_resource_data(listMaxMem),OutputDeviceWrapper.WARNING)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] ave_mem   = %d(%d)"%get_resource_data(listAveMem),OutputDeviceWrapper.WARNING)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] signals   = %d(%d)"%get_resource_data(listSignal),OutputDeviceWrapper.WARNING)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] in_file   = %d(%d)"%get_resource_data(listInFile),OutputDeviceWrapper.WARNING)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] out_file  = %d(%d)"%get_resource_data(listOutFile),OutputDeviceWrapper.WARNING)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] recv_msg  = %d(%d)"%get_resource_data(listRecvMsg),OutputDeviceWrapper.WARNING)
+        outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+        outputDevice.nPrintErr("[MSG] send_msg  = %d(%d)"%get_resource_data(listRecvMsg),OutputDeviceWrapper.WARNING)
+    nFailJob=0
+    nFailJob = len(listFailJob)
+    nSuccessJob = nTotalJob - nFailJob
+    if strPrintRecap=="yes":
+
+        if nFailJob>0:
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] TOTAL_TIME  = "+str(time.time()-nStartProgramTime),OutputDeviceWrapper.WARNING)
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] TOTAL_JOB   = "+str(nTotalJob),OutputDeviceWrapper.WARNING)
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] SUCCESS_JOB = "+str(nSuccessJob),OutputDeviceWrapper.INFO)
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] FAIL_JOB    = "+str(nFailJob),OutputDeviceWrapper.ERROR)
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] WARNING_JOB = "+str(nWarningJob),OutputDeviceWrapper.ERROR2)
+        else:
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] TOTAL_TIME  = "+str(time.time()-nStartProgramTime),OutputDeviceWrapper.WARNING)
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] TOTAL_JOB   = "+str(nTotalJob),OutputDeviceWrapper.WARNING)
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] SUCCESS_JOB = "+str(nSuccessJob),OutputDeviceWrapper.WARNING)
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] FAIL_JOB    = "+str(nFailJob),OutputDeviceWrapper.WARNING)
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"),OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] WARNING_JOB = "+str(nWarningJob),OutputDeviceWrapper.WARNING)
+
+
+        if len(listFailJob) > 0:
+            outputDevice.nPrintErr(("%-"+str(nMaxLength-1)+"s")%("[SUMMARY]"), OutputDeviceWrapper.ETC,1)
+            outputDevice.nPrintErr("[MSG] FAIL_SERVERS = " + " ".join(listFailJob), OutputDeviceWrapper.ERROR) 
+
+    return nFailJob
+
+
+
+def save_history(command_arg):
+    if command_arg.strip('\n') == '': return
+
+    theFile = DIST_HISTORY_FILE
+    find = False
+    lines = []
+    if os.path.exists(theFile):
+        f = open(theFile, 'r')
+        lines = f.readlines()
+        for l in lines:
+            if l.strip() == command_arg.strip():
+                find=True
+        f.close()
+    
+    if not find:
+        f = open(theFile, 'w')
+        total = len(lines)
+        pos = total - 1000
+        for index in range(total):
+            if index<=pos:
+                continue
+            f.write(lines[index])
+        
+        f.write(command_arg+'\n')
+        f.close()
+    
+    return
+
+def print_history():
+    filename = DIST_HISTORY_FILE
+    if not os.path.exists(filename):
+        return
+
+    flag = True
+
+    f = open(filename, 'r')
+    for line in f.readlines():
+        if flag:
+            outputDevice.nPrint(line.replace("@DIST_NEWLINE", "\n").strip('\n') , OutputDeviceWrapper.INFO)
+            flag = False
+        else:
+            outputDevice.nPrint(line.replace("@DIST_NEWLINE", "\n").strip('\n') , OutputDeviceWrapper.ETC)
+            flag = True
+    f.close()
+    
+
+def remove_tmpfiles():
+    try:
+        user = getpass.getuser()
+        tmpdir = '/tmp/dist/%s'%(user)
+
+        if not os.path.exists(tmpdir):
+            return
+
+        files = os.listdir(tmpdir)
+        days = datetime.timedelta(hours=12)
+        deltime = (datetime.datetime.now()-days).strftime("%Y%m%d%H")
+        for filename in files:
+            if not filename.startswith("tmp.dist"):
+                continue
+
+            filepath = "%s/%s"%(tmpdir, filename)
+            mtime = os.stat(filepath)[stat.ST_MTIME]
+
+            if datetime.datetime.fromtimestamp(mtime).strftime("%Y%m%d%H")<deltime:
+                os.remove(filepath)
+    except Exception, e:
+        outputDevice.nPrintErr(("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[ERR] cannot delete tmp file. %s"%(e),OutputDeviceWrapper.ERROR)
+
+def load_config(filename, config={}):
+    """
+    returns a dictionary with key's of the form
+    <section>.<option> and the values 
+    """
+
+    config = config.copy()
+    cp = ConfigParser.ConfigParser()
+    cp.read(filename)
+    for sec in cp.sections():
+        name = string.upper(sec)
+        for opt in cp.options(sec):
+            config[name + "." + string.upper(opt)] = string.strip(cp.get(sec, opt))
+    return config
+
+def get_dist_config():
+    global DIST_REMOTE_HOME
+    global DIST_SERVERGROUP_DIR
+    global DIST_HISTORY_FILE
+
+
+    global DB_HOST
+    global DB_PORT
+    global DB_USER
+    global DB_PASSWD
+    global DB_DBNAME
+    global DB_DBTABLENAME
+
+    flag = False
+#    if os.path.exists('.distrc2'):
+#        config = load_config('.distrc2')
+#        flag = True
+#    elif os.path.exists(os.path.expanduser('~/.distrc2')):
+#        config = load_config(os.path.expanduser('~/.distrc2'))
+#        flag = True
+#    elif os.path.exists('.distrc'):
+
+    if strDistrcFile==None : 
+       # print strDistrcFile
+        #logging.debug("test")
+        current_dist_path = os.path.dirname( os.path.realpath( __file__ ) )
+        #logging.debug(current_dist_path)
+        distrc_location = current_dist_path+'/.distrc'
+        #print distrc_location
+        if os.path.exists(distrc_location) :
+            config = load_config(distrc_location)
+            flag = True
+        elif os.path.exists('.distrc'):
+            config = load_config('.distrc')
+            flag = True
+        elif os.path.exists(os.path.expanduser('~/.distrc')):
+            config = load_config(os.path.expanduser('~/.distrc'))
+            flag = True
+    else : 
+       # print strDistrcFile
+        config = load_config(os.path.expanduser(strDistrcFile))
+        flag=True
+        
+    if flag:
+        try:
+            if config["MAIN.DIST_REMOTE_HOME"] and DIST_REMOTE_HOME == None:
+                DIST_REMOTE_HOME = config["MAIN.DIST_REMOTE_HOME"]
+
+        except Exception, e:
+            pass
+        try:
+            if config["MAIN.DIST_SERVERGROUP_DIR"] and DIST_SERVERGROUP_DIR == None:
+                DIST_SERVERGROUP_DIR = config["MAIN.DIST_SERVERGROUP_DIR"]
+
+        except Exception, e:
+            pass
+        try:
+            if config["MAIN.DIST_HISTORY_FILE"] and DIST_HISTORY_FILE == None:
+                DIST_HISTORY_FILE = config["MAIN.DIST_HISTORY_FILE"]
+
+        except Exception, e:
+            pass
+        try:
+            if config["DB.DB_HOST"] and DB_HOST == None:
+                DB_HOST = config["DB.DB_HOST"]
+
+        except Exception, e:
+            pass
+        try:
+            if config["DB.DB_PORT"] and DB_PORT == None:
+                DB_PORT = config["DB.DB_PORT"]
+
+        except Exception, e:
+            pass
+        try:
+            if config["DB.DB_USER"] and DB_USER == None:
+                DB_USER = config["DB.DB_USER"]
+
+        except Exception, e:
+            pass
+        try:
+            if config["DB.DB_PASSWD"] and DB_PASSWD == None:
+                DB_PASSWD = config["DB.DB_PASSWD"]
+
+        except Exception, e:
+            pass
+        try:
+            if config["DB.DB_DBNAME"] and DB_DBNAME == None:
+                DB_DBNAME = config["DB.DB_DBNAME"]
+        except Exception, e:
+            pass
+        try:
+            if config["DB.DB_DBTABLENAME"] and DB_DBTABLENAME == None:
+                DB_DBTABLENAME = config["DB.DB_DBTABLENAME"]
+        except Exception, e:
+            pass
+
+
+    # set default value and path normalize
+    if DIST_REMOTE_HOME!=None:
+        if DIST_REMOTE_HOME.find('~')!=-1:
+            outputDevice.nPrintErr("[PROGRAM][ERR] Can't use '~' in DIST_REMOTE_HOME",OutputDeviceWrapper.ERROR)
+            sys.exit(254)
+
+    elif DIST_REMOTE_HOME == None:
+       # DIST_REMOTE_HOME = '~'
+        DIST_REMOTE_HOME = ' '
+    else:
+        DIST_REMOTE_HOME = os.path.normpath(DIST_REMOTE_HOME)
+
+    if DIST_HISTORY_FILE == None:
+        DIST_HISTORY_FILE = os.path.expanduser('~/.dist.history')
+    else:
+        DIST_HISTORY_FILE = os.path.expanduser(DIST_HISTORY_FILE)
+        
+    if DIST_SERVERGROUP_DIR == None:
+        DIST_SERVERGROUP_DIR = os.path.expanduser('~/servergroup')
+    else:
+        DIST_SERVERGROUP_DIR = os.path.expanduser(DIST_SERVERGROUP_DIR)
+
+    DIST_SERVERGROUP_DIR = os.path.normpath(DIST_SERVERGROUP_DIR)
+
+
+def _parseArgs(args):
+
+    global strPrintUsage
+    global command
+    global strCommand
+    global strCommandFile
+    global DIST_REMOTE_HOME
+    global DIST_SERVERGROUP_DIR
+    global DIST_HISTORY_FILE
+    global strNoLog
+    global nConnectionTimeout 
+    global nSequenceOffset
+    global strDelim
+    global nHowToGetSvrList, strWhere
+    global strDonotask 
+    global strPrintMode      # a mode to print. [all/success/fail]
+    global strPrintUsage      # print help message
+
+    global strPrintHistory
+    global strPrintSummary
+    global strPrintRecap
+    global strPrintResource
+
+    global bOriginalMsg 
+    global bPrintQuery
+    global nConcurrent           # the number of thread
+    global nDelayTime          # delay time
+    global nTimeout              # timeout
+    global strErrorHandle
+    global strExcludeListFile
+    global strDonotask 
+    global strDelete 
+    global strSort
+    global strDebugMode
+    global strSendFiles
+    global strDistrcFile
+    global strSaveDir
+    global strHostUnique
+    global strOverwrite
+    global nSaveMode
+    global nBufferLine
+    global nBufferFlushTime
+    global nMaxLength           # max length of hostnames
+    global listServer           # server list to run command
+
+
+    try:
+        optlist,args=getopt.getopt(sys.argv[1:],"c:d:f:F:e:ihHL:oOn:D:pq:rs:t:T:uv:w", ["DIST_RC_FILE=","DIST_REMOTE_HOME=", "DIST_SERVERGROUP_DIR=", "DIST_HISTORY_FILE=","exclude_list=", "nolog","no_summary","do_not_print_query","do_not_delete","do_not_sort", "connection_timeout=","seq_offset="])
+        
+        command='dist'
+
+        for o,a in optlist:
+            if o=="-c":
+                strCommand=a
+                command = '''%s %s "%s"'''%(command, o, a.replace("\"", "\\\"").replace("$", "\\$").replace("\n", "@DIST_NEWLINE"))
+
+            elif o=="-f":
+                strCommandFile=a
+                command = "%s %s %s"%(command, o, a)
+                
+            elif o=="--exclude_list":
+                strExcludeListFile = a
+                command = '''%s %s %s'''%(command, o, a.replace("\"", "\\\"").replace("$", "\\$"))
+                #print strExcludeListFile
+                
+            elif o=="--DIST_REMOTE_HOME":
+                DIST_REMOTE_HOME = a
+                command = '''%s %s %s'''%(command, o, a.replace("\"", "\\\"").replace("$", "\\$"))
+                
+            elif o=="--DIST_RC_FILE":
+                strDistrcFile = a
+                command = '''%s %s %s'''%(command, o, a.replace("\"", "\\\"").replace("$", "\\$"))
+
+
+            elif o=="--DIST_SERVERGROUP_DIR":
+                DIST_SERVERGROUP_DIR = a
+                command = '''%s %s %s'''%(command, o, a.replace("\"", "\\\"").replace("$", "\\$"))
+
+            elif o=="--DIST_HISTORY_FILE":
+                DIST_HISTORY_FILE = a
+                command = '''%s %s %s'''%(command, o, a.replace("\"", "\\\"").replace("$", "\\$"))
+
+            elif o=="--nolog":
+                strNoLog = "yes"
+
+            elif o=="--do_not_delete":
+                strDelete = "no"
+            elif o=="--do_not_sort":
+                strSort = "no"
+            elif o=="--do_not_print_query":
+                bPrintQuery= False
+            elif o=="--no_summary":
+                strPrintRecap = "no"
+
+
+            elif o=="--connection_timeout":
+                nConnectionTimeout = int(a) 
+                command = "%s %s %s"%(command, o, a)
+
+            elif o=="--seq_offset":
+                nSequenceOffset = int(a) 
+                command = "%s %s %s"%(command, o, a)
+
+
+            elif o=="-D":
+                strDelim=a
+                command = "%s %s %s"%(command, o, a)
+
+            elif o=="-q":
+                nHowToGetSvrList=MODE_DB
+                strWhere=a
+                command = '''%s %s "%s"'''%(command, o, a.replace("\"", "\\\""))
+
+            elif o=="-i":
+                strDonotask = "yes"
+                command = "%s %s"%(command, o)
+
+            elif o=="-h":
+                strPrintUsage="yes"
+
+            elif o=="-H":
+                strPrintHistory="yes"
+                
+            elif o=="-e":
+                if a=="a":
+                    strErrorHandle="all"
+                elif a=="s":
+                    strErrorHandle="stderr"
+                elif a=="c":
+                    strErrorHandle="code"
+                command = "%s %s %s"%(command, o, a)
+                
+            elif o=="-v":
+                if a=="s":
+                    strPrintMode="success"
+                elif a=="e":
+                    strPrintMode="error"
+                elif a=="n":
+                    strPrintMode="no"
+                command = "%s %s %s"%(command, o, a)
+
+            elif o=="-O":
+                bOriginalMsg=True
+                command = "%s %s"%(command, o)
+
+
+            elif o=="-p":
+                strDebugMode="yes"
+                command = "%s %s"%(command, o)
+                
+            elif o=="-F":
+                if a=="1" or a=="2":
+                    nSaveMode=int(a)
+                command = "%s %s %s"%(command, o, a)
+
+            elif o=="-s":
+                strSendFiles=a
+                command = '''%s %s "%s"'''%(command, o, a)
+                
+            elif o=="-o":
+                strOverwrite="yes"
+                command = "%s %s"%(command, o)
+                
+            elif o=="-r":
+                strPrintSummary="yes"
+                command = "%s %s"%(command, o)
+                
+            elif o=="-w":
+                strPrintResource="yes"
+                command = "%s %s"%(command, o)
+                
+            elif o=="-n":
+                nConcurrent=int(a)
+                command = "%s %s %s"%(command, o, a)
+                
+            elif o=="-L":
+                nBufferLine=int(a)
+                command = "%s %s %s"%(command, o, a)
+                
+            elif o=="-T":
+                nBufferFlushTime=float(float(a)/1000)
+                command = "%s %s %s"%(command, o, a)
+                
+            elif o=="-u":
+                strHostUnique="no"
+                command = "%s %s"%(command, o)
+                
+            elif o=="-t":
+                nTimeout=int(a)
+                command = "%s %s %s"%(command, o, a)
+
+            elif o=="-d":
+                nDelayTime=float(float(a)/1000)
+                command = "%s %s %s"%(command, o, a)
+
+        if len(args)>0:
+            command = "%s %s"%(command, ' '.join(args))
+
+#        if not bOriginalMsg :
+#            nBufferLine = nBufferLine *2 
+
+        return args
+
+    except Exception:
+        outputDevice.nPrintErr(("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[ERR] Incorrect option.", OutputDeviceWrapper.ERROR)
+        usage()
+        sys.exit(-1)
+
+def _initSignal(): 
+
+    signal.signal(signal.SIGINT, exit_program)
+    signal.signal(signal.SIGQUIT, exit_program)
+    signal.signal(signal.SIGTERM, exit_program)
+
+
+
+
+if __name__ == "__main__":
+
+
+    nStartProgramTime = time.time()
+
+
+    outputDevice=OutputDeviceWrapper()
+
+   
+    if len(sys.argv)<=1 :
+        usage()
+        sys.exit(-1)
+
+    args=_parseArgs(sys.argv[1:] )
+
+    if strPrintUsage!=None:
+        usage()
+        sys.exit(-1)
+
+
+    get_dist_config()
+
+    if strPrintHistory!=None:
+        print_history()
+        sys.exit(-1)
+
+    if not strNoLog:
+        save_history(command)
+
+    _initSignal()
+
+
+    if nHowToGetSvrList==MODE_DB:
+        try: 
+            from MySQLdb import connect, cursors
+        except: 
+            outputDevice.nPrintErr(("%-"+str(nMaxLength)+"s")%("[PROGRAM]")+"[ERR] Cannot find MySql Module.", OutputDeviceWrapper.ERROR)
+            sys.exit(-1)
+
+    if not (strCommand==None and strCommandFile==None):
+        check_arguement()
+        strSaveDir=make_savedir()
+
+    if nHowToGetSvrList==MODE_DB:
+        listServer = get_serverlist_from_db()
+
+    listServer = listServer + get_serverlist(args)
+
+    if not strExcludeListFile==None:
+        try:
+            f=open(strExcludeListFile, 'r')
+        except Exception, e:
+            outputDevice.nPrintErr("[PROGRAM][ERR] Can't Open File. %s"%e,OutputDeviceWrapper.ERROR)
+            #print e
+            sys.exit(-1)
+
+        for line in f :
+            line=line.strip()
+            if listServer.count(line) :
+                listServer.remove(line)
+        f.close()
+        
+    nTotalJob = len(listServer)
+
+    if strCommand==None and strCommandFile==None:
+        print_serverlist(listServer)
+        sys.exit(0)
+
+#    print "nccc 1", nConcurrent
+
+    if nConcurrent <= 0 :  #if nConcurrent is default,
+        nConcurrent=MAX_CONCURRENT_TASK       
+    if nConcurrent>HARD_MAX_CONCURRENT_TASK:   # but if it is larger than the hard default,
+        nConcurrent=HARD_MAX_CONCURRENT_TASK   # it should not be larger than the hard default.
+    if nConcurrent>len(listServer):   
+        nConcurrent=len(listServer)   
+
+#    print "nccc ", nConcurrent
+
+    nMaxLength=get_maxhostname()+3
+
+
+    pool = ThreadPool(nConcurrent, nDelayTime, verbose=False)
+
+    for pos in xrange(len(listServer)):
+        te = TaskExecutor(listServer[pos], pos+nSequenceOffset)
+        pool.addTask(te, 1)
+
+    pool2 = ThreadPool(5, nDelayTime, verbose=False)
+    pool2.addTask(PrintQueueConsumer(pool))
+    pool2.start()
+
+    pool.start()
+    pool.terminate()
+
+    pool2.terminate()
+
+    #while not pool.queueEmpty() or pool.taskRunning():
+    #while not isExit and (  ( pool and  pool.taskRunning() ) or(pool2 and pool2.taskRunning() ) ):
+    while   ( pool and  pool.taskRunning() ) or(pool2 and pool2.taskRunning() ) :
+            time.sleep(0.1)
+
+    #os.system("find /tmp/tmp.dist.* -type f -mtime +1 -exec rm -rf {} \; &> /dev/null")
+    remove_tmpfiles()
+
+    if nSaveMode==2: # remove files that filesize is 0
+        os.system('find %s/*.err -type f -size 0 -exec rm -rf {} \; &> /dev/null'%strSaveDir)
+    # print statistics
+    failnum = print_statistics()
+    #logging.debug(failnum)
+    #print failnum
+    if failnum>254 :
+        failnum = 254
+
+    #print "main"
+    sys.exit(failnum)
+
+
+
